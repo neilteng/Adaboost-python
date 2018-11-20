@@ -1,0 +1,85 @@
+__author__ = 'Zhiyong Deng'
+#-*- coding=utf-8 -*-
+'''
+based on 西瓜书机器学习实战, 周志华
+'''
+import numpy as np
+
+class adaboost:
+    def __init__(self, feature_data=None, labels=None):
+        feature_data=np.mat(feature_data)
+        classLabels=np.mat(labels).T
+        self.feature_data=feature_data
+        self.classLabels=classLabels
+        self.sample_num, self.feature_num=feature_data.shape
+
+    def weak_classifier(self, threshVal, selected_dim, threshIneq):
+        predict_label = np.ones((self.sample_num, 1))
+        if threshIneq == 'lessthan':
+            predict_label[self.feature_data[:, selected_dim] <= threshVal] = -1.0
+        else:
+            predict_label[self.feature_data[:, selected_dim] > threshVal] = -1.0
+        return predict_label
+
+    def best_weak_clf(self):
+        numSteps = 100.0;
+        best_weak_clf_ensemble = {};
+        best_predict_lable = np.mat(np.zeros(( self.sample_num, 1)))
+        minError = np.inf  # init error sum, to +infinity
+        for i in range(self.feature_num):  # loop over all dimensions
+            rangeMin = self.feature_data[:, i].min();
+            rangeMax = self.feature_data[:, i].max();
+            stepSize = (rangeMax - rangeMin) / numSteps
+            for j in range(-1, int(numSteps) + 1):  # loop over all range in current dimension
+                for inequal in ['lessthan', 'greaterthan']:  # go over less than and greater than
+                    threshVal = (rangeMin + float(j) * stepSize)
+                    predictedVals = self.weak_classifier(self.feature_data, i, threshVal,
+                                                    inequal)  # call stump classify with i, j, lessThan
+                    errArr = np.mat(np.ones(( self.sample_num, 1)))
+                    errArr[predictedVals == self.classLabels] = 0
+                    weightedError = self.weight.T * errArr  # calc total error multiplied by weight
+                    # print "split: dim %d, thresh %.2f, thresh ineqal: %s, the weighted error is %.3f" % (i, threshVal, inequal, weightedError)
+                    if weightedError < minError:
+                        minError = weightedError
+                        best_predict_lable = predictedVals.copy()
+                        best_weak_clf_ensemble['dim'] = i
+                        best_weak_clf_ensemble['thresh'] = threshVal
+                        best_weak_clf_ensemble['ineq'] = inequal
+        return best_weak_clf_ensemble, minError, best_predict_lable
+    
+    def train(self, numIt=100):
+        self.weakClass_ensemble = []
+        self.weight = np.mat(np.ones((self.sample_num, 1)) / self.sample_num)  # init weight to all equal
+        predict_lable_ensemble = np.mat(np.zeros((self.sample_num, 1)))
+        for i in range(numIt):
+            best_weak_clf_ensemble, error, predict_lable = self.best_weak_clf()  # build Stump
+            # print "weight:",weight.T
+            alpha = float(
+                0.5 * np.log((1.0 - error) / max(error, 1e-16)))  # calc alpha, throw in max(error,eps) to account for error=0
+            best_weak_clf_ensemble['alpha'] = alpha
+            self.weakClass_ensemble.append(best_weak_clf_ensemble)  # store Stump Params in Array
+            # print "predict_lable: ",predict_lable.T
+            expon = np.multiply(-1 * alpha * self.classLabels, predict_lable)  # exponent for weight calc, getting messy
+            self.weight = np.multiply(self.weight, np.exp(expon))  # Calc New weight for next iteration
+            self.weight = self.weight / self.weight.sum()
+            # calc training error of all classifiers, if this is 0 quit for loop early (use break)
+            predict_lable_ensemble += alpha * predict_lable
+            # print "predict_lable_ensemble: ",predict_lable_ensemble.T
+            Errors_ensemble = np.multiply(np.sign(predict_lable_ensemble) != self.classLabels, np.ones((self.sample_num, 1)))
+            errorRate = Errors_ensemble.sum() / self.sample_num
+            print("total error: ", errorRate)
+            if errorRate == 0.0: break
+        return self.weakClass_ensemble, predict_lable_ensemble
+
+
+    def predict(self, test_data):
+        dataMatrix = np.mat(test_data)  # do stuff similar to last predict_lable_ensemble in train
+        m = np.shape(dataMatrix)[0]
+        predict_lable_ensemble = np.mat(np.zeros((m, 1)))
+        for i in range(len(self.weakClass_ensemble)):
+            predict_lable = self.weak_classifier(dataMatrix, self.weakClass_ensemble[i]['dim'], self.weakClass_ensemble[i]['thresh'],
+                                     self.weakClass_ensemble[i]['ineq'])
+            predict_lable_ensemble += self.weakClass_ensemble[i]['alpha'] * predict_lable
+            print(predict_lable_ensemble)
+        return np.sign(predict_lable_ensemble)
+
